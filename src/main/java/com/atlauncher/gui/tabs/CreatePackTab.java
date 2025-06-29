@@ -58,6 +58,7 @@ import com.atlauncher.data.minecraft.loaders.LoaderVersion;
 import com.atlauncher.gui.components.LockingPreservingCaretTextSetter;
 import com.atlauncher.gui.panels.HierarchyPanel;
 import com.atlauncher.listener.StatefulTextKeyAdapter;
+import com.atlauncher.listener.StatefulTextDocumentListener;
 import com.atlauncher.managers.DialogManager;
 import com.atlauncher.utils.ComboItem;
 import com.atlauncher.viewmodel.base.ICreatePackViewModel;
@@ -70,6 +71,8 @@ import io.reactivex.rxjava3.subjects.BehaviorSubject;
 public class CreatePackTab extends HierarchyPanel implements Tab {
     private JTextField nameField;
     private JTextArea descriptionField;
+    private StatefulTextDocumentListener nameFieldDocumentListener;
+    private StatefulTextDocumentListener descriptionFieldDocumentListener;
     private JCheckBox minecraftVersionReleasesFilterCheckbox;
     private JCheckBox minecraftVersionExperimentsFilterCheckbox;
     private JCheckBox minecraftVersionSnapshotsFilterCheckbox;
@@ -139,10 +142,7 @@ public class CreatePackTab extends HierarchyPanel implements Tab {
         return GetText.tr("Create Instance");
     }
 
-    private void setupMainPanel() {
-        JPanel mainPanel = new JPanel(new GridBagLayout());
-        GridBagConstraints gbc = new GridBagConstraints();
-
+    private void setupNameField(JPanel mainPanel, GridBagConstraints gbc) {
         // Name
         gbc.gridx = 0;
         gbc.gridy = 0;
@@ -154,13 +154,20 @@ public class CreatePackTab extends HierarchyPanel implements Tab {
         gbc.insets = UIConstants.FIELD_INSETS;
         gbc.anchor = GridBagConstraints.BASELINE_LEADING;
         LockingPreservingCaretTextSetter nameFieldSetter = new LockingPreservingCaretTextSetter(nameField);
-        addDisposable(viewModel.name().subscribe((it) -> nameFieldSetter.setText(it.orElse(null))));
-        nameField.addKeyListener(new StatefulTextKeyAdapter(
-            (e) -> viewModel.setName(nameField.getText()),
-            (e) -> nameFieldSetter.setLocked(true),
-            (e) -> SwingUtilities.invokeLater(() -> nameFieldSetter.setLocked(false))));
+        nameFieldDocumentListener = new StatefulTextDocumentListener(
+            nameField,
+            text -> viewModel.setName(text),
+            () -> nameFieldSetter.setLocked(true),
+            () -> nameFieldSetter.setLocked(false)
+        );
+        nameField.getDocument().addDocumentListener(nameFieldDocumentListener);
+        addDisposable(viewModel.name().subscribe((it) -> {
+            nameFieldDocumentListener.updateText(it.orElse(null));
+        }));
         mainPanel.add(nameField, gbc);
+    }
 
+    private void setupDescriptionField(JPanel mainPanel, GridBagConstraints gbc) {
         // Description
         gbc.gridx = 0;
         gbc.gridy++;
@@ -176,16 +183,28 @@ public class CreatePackTab extends HierarchyPanel implements Tab {
         descriptionScrollPane.setBorder(new FlatScrollPaneBorder());
         descriptionScrollPane.setPreferredSize(new Dimension(450, 80));
         descriptionScrollPane.setViewportView(descriptionField);
-
         descriptionField.setLineWrap(true);
-        LockingPreservingCaretTextSetter descriptionFieldSetter = new LockingPreservingCaretTextSetter(
-            descriptionField);
-        addDisposable(viewModel.description().subscribe((it) -> descriptionFieldSetter.setText(it.orElse(null))));
-        descriptionField.addKeyListener(new StatefulTextKeyAdapter(
-            (e) -> viewModel.setDescription(descriptionField.getText()),
-            (e) -> descriptionFieldSetter.setLocked(true),
-            (e) -> SwingUtilities.invokeLater(() -> descriptionFieldSetter.setLocked(false))));
+        LockingPreservingCaretTextSetter descriptionFieldSetter = new LockingPreservingCaretTextSetter(descriptionField);
+        descriptionFieldDocumentListener = new StatefulTextDocumentListener(
+            descriptionField,
+            text -> viewModel.setDescription(text),
+            () -> descriptionFieldSetter.setLocked(true),
+            () -> descriptionFieldSetter.setLocked(false)
+        );
+
+        descriptionField.getDocument().addDocumentListener(descriptionFieldDocumentListener);
+        addDisposable(viewModel.description().subscribe((it) -> {
+            descriptionFieldDocumentListener.updateText(it.orElse(null));
+        }));
         mainPanel.add(descriptionScrollPane, gbc);
+    }
+
+    private void setupMainPanel() {
+        JPanel mainPanel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+
+        setupNameField(mainPanel, gbc);
+        setupDescriptionField(mainPanel, gbc);
 
         // Minecraft Version
         gbc.gridx = 0;
@@ -656,8 +675,14 @@ public class CreatePackTab extends HierarchyPanel implements Tab {
     @Override
     protected void onDestroy() {
         removeAll();
-        nameField = null;
-        descriptionField = null;
+        if (nameField != null && nameFieldDocumentListener != null) {
+            nameField.getDocument().removeDocumentListener(nameFieldDocumentListener);
+            nameFieldDocumentListener = null;
+        }
+        if (descriptionField != null && descriptionFieldDocumentListener != null) {
+            descriptionField.getDocument().removeDocumentListener(descriptionFieldDocumentListener);
+            descriptionFieldDocumentListener = null;
+        }
         minecraftVersionReleasesFilterCheckbox = null;
         minecraftVersionExperimentsFilterCheckbox = null;
         minecraftVersionSnapshotsFilterCheckbox = null;
